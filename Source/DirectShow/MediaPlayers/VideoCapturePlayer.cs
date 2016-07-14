@@ -431,43 +431,56 @@ namespace WPFMediaKit.DirectShow.MediaPlayers
                 throw new Exception("Failed to get IAMStreamConfig");
             }
 
-            /* The media type of the video */
-            AMMediaType media;
-
-            /* Get the AMMediaType for the video out pin */
-            hr = videoStreamConfig.GetFormat(out media);
-            DsError.ThrowExceptionForHR(hr);
-
-            /* Make the VIDEOINFOHEADER 'readable' */
+            ///* Make the VIDEOINFOHEADER 'readable' */
             var videoInfo = new VideoInfoHeader();
-            Marshal.PtrToStructure(media.formatPtr, videoInfo);
 
-            /* Setup the VIDEOINFOHEADER with the parameters we want */
-            videoInfo.AvgTimePerFrame = DSHOW_ONE_SECOND_UNIT / FPS;
-            videoInfo.BmiHeader.Width = DesiredWidth;
-            videoInfo.BmiHeader.Height = DesiredHeight;
+            int iCount = 0, iSize = 0;
+            videoStreamConfig.GetNumberOfCapabilities(out iCount, out iSize);
 
-            if (mediaSubType != Guid.Empty)
+            IntPtr TaskMemPointer = Marshal.AllocCoTaskMem(iSize);
+
+
+            AMMediaType pmtConfig = null;
+            for (int iFormat = 0; iFormat < iCount; iFormat++)
             {
-                int fourCC = 0;
-                byte[] b = mediaSubType.ToByteArray();
-                fourCC = b[0];
-                fourCC |= b[1] << 8;
-                fourCC |= b[2] << 16;
-                fourCC |= b[3] << 24;
+                IntPtr ptr = IntPtr.Zero;
 
-                videoInfo.BmiHeader.Compression = fourCC;
-                media.subType = mediaSubType;
+                videoStreamConfig.GetStreamCaps(iFormat, out pmtConfig, TaskMemPointer);
+
+                videoInfo = (VideoInfoHeader)Marshal.PtrToStructure(pmtConfig.formatPtr, typeof(VideoInfoHeader));
+
+                if (videoInfo.BmiHeader.Width == DesiredWidth && videoInfo.BmiHeader.Height == DesiredHeight)
+                {
+
+                    ///* Setup the VIDEOINFOHEADER with the parameters we want */
+                    videoInfo.AvgTimePerFrame = DSHOW_ONE_SECOND_UNIT / FPS;
+
+                    if (mediaSubType != Guid.Empty)
+                    {
+                        int fourCC = 0;
+                        byte[] b = mediaSubType.ToByteArray();
+                        fourCC = b[0];
+                        fourCC |= b[1] << 8;
+                        fourCC |= b[2] << 16;
+                        fourCC |= b[3] << 24;
+
+                        videoInfo.BmiHeader.Compression = fourCC;
+                        // pmtConfig.subType = mediaSubType;
+
+                    }
+
+                    /* Copy the data back to unmanaged memory */
+                    Marshal.StructureToPtr(videoInfo, pmtConfig.formatPtr, true);
+
+                    hr = videoStreamConfig.SetFormat(pmtConfig);
+                    break;
+                }
+
             }
 
-            /* Copy the data back to unmanaged memory */
-            Marshal.StructureToPtr(videoInfo, media.formatPtr, false);
-
-            /* Set the format */
-            hr = videoStreamConfig.SetFormat(media);
-
-            /* We don't want any memory leaks, do we? */
-            DsUtils.FreeAMMediaType(media);
+            /* Free memory */
+            Marshal.FreeCoTaskMem(TaskMemPointer);
+            DsUtils.FreeAMMediaType(pmtConfig);
 
             if (hr < 0)
                 return false;

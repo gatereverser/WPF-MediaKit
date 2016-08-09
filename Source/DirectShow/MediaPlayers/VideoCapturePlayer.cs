@@ -369,7 +369,7 @@ namespace WPFMediaKit.DirectShow.MediaPlayers
                 hr = graphBuilder.RenderStream(PinCategory.Preview,
                                                MediaType.Video,
                                                m_captureDevice,
-                                               null,
+                                               EnableSampleGrabbing ? (IBaseFilter)m_sampleGrabber : null,
                                                m_renderer);
 
                 DsError.ThrowExceptionForHR(hr);
